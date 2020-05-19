@@ -26,9 +26,9 @@ def argumentparser():
               arguments and values
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-l',type=int,default=300,
+    parser.add_argument('-l',type=int,default=200,
                         help="Length of road, default=300")
-    parser.add_argument('-n',type=int,default=150,
+    parser.add_argument('-n',type=int,default=100,
                         help="Number of cars, default=150") 
     parser.add_argument('-p',action='store_true',default=False,
                         help="Plot situation,default=False")
@@ -38,8 +38,12 @@ def argumentparser():
                         help="Random positions,default=False")
     parser.add_argument('-pr',type=int,default=100,
                         help="Print/plot rate, default=100")
+    parser.add_argument('-d',type=int,default=None,
+                        help="Create initial array with density between [1]/10-[9]/10, default=None")
     parser.add_argument('-m','--max',type=int,default=10**5,
                         help="Maximum monte-carlo steps,default=10**6")
+    parser.add_argument('-sl','--speedlimit',type=int,default=None,
+                        help="Impose speed limit on cars, Default=None")
     parser.add_argument('--debug',action='store_true',default=False,
                         help="print debug options")
     return parser.parse_args()
@@ -80,7 +84,7 @@ def run_visual_simulation(road,args):
         nonlocal steps
         nonlocal steps_taken, mqls
         for _ in range(args.pr):
-            road = monte_carlo(road,index)
+            road = monte_carlo(road,index,args)
             steps += 1
         if args.rolling:
             road = np.roll(road,1)
@@ -101,7 +105,7 @@ def run_visual_simulation(road,args):
 # MONTE CARLO SIMULATION METHOD
 #-------------------------------------------
 
-def monte_carlo(road,index):
+def monte_carlo(road,index,args):
     """
     :Description: 
     function that handles a monte carlo step
@@ -114,6 +118,9 @@ def monte_carlo(road,index):
     speed = abs(nonzeros[(rand+ 1) % len(nonzeros)]
                 - nonzeros[rand]
                 - len(road)*round((nonzeros[(rand+ 1) % len(nonzeros)]-nonzeros[rand] )/len(road)) - 1)
+    
+    if args.speedlimit != None and speed > args.speedlimit:
+        speed = args.speedlimit
 
     if speed == 0:
         return road
@@ -123,7 +130,7 @@ def monte_carlo(road,index):
         road[(nonzeros[rand] + 1) % len(road)] = 1
         return road
 
-    return road 
+    return road
 
 #-------------------------------------------
 # CONVENIENCE FUNCTIONS
@@ -131,6 +138,7 @@ def monte_carlo(road,index):
 
 def mean_queue_length(road):
     return np.mean([sum(g) for b, g in itertools.groupby(road) if b])
+
 
 #-------------------------------------------
 # LATTICE CREATION OPTIONS BELOW
@@ -150,6 +158,15 @@ def lattice_random(L,N):
     road[mask.astype(np.bool)] = 1
     return road
 
+def lattice_density_10(L,denominator):
+    stencil = np.zeros(10)
+    stencil[:denominator] = 1
+    road = np.tile(stencil,round(L/10))
+    remainder = L % 10
+    road = np.append(road,stencil[0:remainder])
+    return road
+
+
 #-------------------------------------------
 
 
@@ -162,6 +179,9 @@ if __name__ == "__main__":
     #Create initial condition
     if args.random:
         road = lattice_random(args.l,args.n)
+    elif args.d != None:
+        road = lattice_density_10(args.l,args.d)
+        print(road)
     else:
         road = lattice_even(args.l,args.n)
     
