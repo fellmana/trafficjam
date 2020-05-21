@@ -14,6 +14,7 @@ import scipy.stats as stats
 import itertools
 
 #------------------------------------------
+
 class car:
 
     def __init__(self,pos,index, lane, track=False):
@@ -30,7 +31,6 @@ class car:
 
     def __str__(self):
         return "Car: " + str(self.index) + ",position: " + str(self.position) + ",speed: " + str(self.speed)
-
 
 #------------------------------------------
 
@@ -70,12 +70,22 @@ class simulation:
                 if (self.cumulative[i-1] < rand <= self.cumulative[i]):
                     return i
 
-    def calculate_speeds(self):
+    def calculate_speeds(self,max_speed):
         for i in range(self.num):
             if i == self.num - 1:
-                self.cars[i].set_speed(self.distance(i,0))
+                self.cars[i].set_speed(min(self.distance(i,0),max_speed))
             else:
-                self.cars[i].set_speed(self.distance(i,i+1))
+                self.cars[i].set_speed(min(self.distance(i,i+1),max_speed))
+
+    def NS_speed(self,max_speed, p):
+        for i,c in enumerate(self.cars):
+            c.set_speed(min(c.speed +1,max_speed))
+            if i == self.num -1:
+                c.set_speed(min(c.speed,self.distance(i,0) - 1))
+            else:
+                c.set_speed(min(c.speed,self.distance(i,i+1) - 1))
+            if np.random.rand() <= p:
+                c.set_speed(max(0,c.speed - 1))
 
     def calculate_cumulative(self):
         summa = 0
@@ -103,6 +113,19 @@ class simulation:
         for c in self.cars:
             print(c)
 
+    def kmc(self,sl):
+        self.calculate_speeds(sl)
+        self.calculate_cumulative() 
+        self.move_car(self.get_random())
+        self.update_time()
+
+
+    def Nagel_Schreckenberg(self,sl,prob):
+        self.NS_speed(sl,prob)
+        for a in range(self.num):
+                self.cars[a].position = (self.cars[a].position + self.cars[a].speed) % self.length
+
+        self.global_time += 1
 
 
 def argumentparser():
@@ -117,49 +140,61 @@ def argumentparser():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('-l',type=int,default=300,
-                        help="Length of road, default=300")
-    parser.add_argument('-n',type=int,default=150,
-                        help="Number of cars, default=150") 
-    parser.add_argument('-p',action='store_true',default=False,
-                        help="Plot situation,default=False")
+                        help="length of road, default=300")
+    parser.add_argument('-n',type=int,default=None,
+                        help="number of cars, default=150") 
+    parser.add_argument('--noplot',action='store_true',default=False,
+                        help="plot situation,default=False")
     parser.add_argument('--random',action='store_true',default=False,
-                        help="Random positions,default=False")
+                        help="random positions,default=False")
     parser.add_argument('-pr',type=int,default=100,
-                        help="Print/plot rate, default=100")
+                        help="print/plot rate, default=100")
+    
     parser.add_argument('-d',type=int,default=None,
-                        help="Create initial array with density between [1]/10-[9]/10, default=None")
+                        help="create initial array with density between [1]/10-[9]/10, default=None")
     parser.add_argument('-m','--max',type=int,default=10**5,
-                        help="Maximum monte-carlo steps,default=10**6")
-    parser.add_argument('-sl','--speedlimit',type=int,default=None,
-                        help="Impose speed limit on cars, Default=None")
-    parser.add_argument('--follow',action="store_true",default=False,
-                        help="Follow a single element during simulation")
-    parser.add_argument('--debug',action='store_true',default=False,
-                        help="print debug options")
+                        help="maximum monte-carlo steps,default=10**6")
+    parser.add_argument('-sl','--speedlimit',type=int,default=10,
+                        help="impose speed limit on cars, Default=None")
+    parser.add_argument('--type',choices=["kmc","ns"],default="kmc",
+                        help="select simulation type"
+                             "kmc = Basic kinetic monte carlo [default]"
+                             "ns  = Nagel Schreckenberg method")
+    parser.add_argument('-p',type=float,default=0.5,
+                        help="braking probability in NS method, default= 0.5")
+    parser.add_argument('--seed',type=int,default=None,
+                        help="give seed to random number generator")
     return parser.parse_args()
+    
 #-------------------------------------------
 # SIMULATION MAIN METHODS
 #-------------------------------------------
 
 def run_simulation(r,args):
 
-    lane = simulation(r)
+    lane = simulation(r, track=False)
     lane.print_cars()
-    lane.calculate_speeds()
-    lane.print_cars()
-    lane.calculate_cumulative()
-    print(lane.cumulative)
-    c = lane.get_random()
-    print(c)
-    print(lane.get_array())
+    road = lane.get_array()
+    print(road)
+    print(mean_queue_length(road))
 
-    lane.move_car(c)
-    lane.calculate_speeds()
-    lane.print_cars()
-    print(lane.get_array())
+
+
+    # lane.calculate_speeds()
+    # lane.print_cars()
+    # lane.calculate_cumulative()
+    # print(lane.cumulative)
+    # c = lane.get_random()
+    # print(c)
+    # print(lane.get_array())
+
+    # lane.move_car(c)
+    # lane.calculate_speeds()
+    # lane.print_cars()
+    # print(lane.get_array())
     
-    lane.calculate_cumulative()
-    print(lane.cumulative)
+    # lane.calculate_cumulative()
+    # print(lane.cumulative)
 #-------------------------------------------
 
 def run_visual_simulation(r,args):
@@ -188,7 +223,7 @@ def run_visual_simulation(r,args):
                 transform=ax.transAxes, ha="center")
 
     traces = []
-    for j in range(args.n):
+    for j in range(road.num):
         trace = ax2.plot([],[],color="k",marker="s",ms=2,linestyle="")[0]
         traces.append(trace)
 
@@ -209,12 +244,11 @@ def run_visual_simulation(r,args):
         nonlocal road
         nonlocal steps
         nonlocal steps_taken, mqls
-        for _ in range(args.pr):
-            road.calculate_speeds()
-            road.calculate_cumulative()
-            rand_car_index = road.get_random() 
-            road.move_car(rand_car_index)
-            road.update_time()
+        if args.type == "kmc": 
+            for _ in range(args.pr):
+                road.kmc(args.speedlimit)
+        elif args.type == "ns":
+            road.Nagel_Schreckenberg(args.speedlimit,args.p)
 
         road.update_history(road.global_time)
         r = road.get_array() 
@@ -242,7 +276,39 @@ def run_visual_simulation(r,args):
 #-------------------------------------------
 
 def mean_queue_length(road):
+    """
+    ----------------------------------------
+    Calculates the mean queue length
+    from given array
+    ----------------------------------------
+    :input:  road = array where 0 = empty
+                   and 1 = occupied
+    :output: mean queue length
+
+    NOTES
+    ----------------------------------------
+    - Rolling is used to guarantee that a queue
+      is not splitted over periodic border
+    - With large dense arrays rolling might be 
+      very inefficient
+    - If you can accept reasonable accuracy 
+      while loop could be turned of for better
+      performance, SUGGESTION: if check for this?
+    - Is is probably a smartet way to handel 
+      periodic borders
+
+    >>> mean_queue_length([1. 0. 0. 0. 1. 1. 0. 1. 0. 1.])
+    1.6666666666666667
+    """
+    n = 0
+    while True:
+        if road[0] == 0 or n == len(road):
+            break
+        else:
+            road = np.roll(road,1)
+            n += 1
     return np.mean([sum(g) for b, g in itertools.groupby(road) if b])
+
 
 
 def queue_locations(road,length_filter=0):
@@ -270,7 +336,7 @@ def queue_locations(road,length_filter=0):
 # LATTICE CREATION OPTIONS BELOW
 #-------------------------------------------
 
-def lattice_even(L,N):
+def lattice_even(L):
     road = np.zeros(L)
     road[::2] = 1
     return road
@@ -303,17 +369,21 @@ if __name__ == "__main__":
     # Parse commandline argumet
     args = argumentparser()
     #Create initial condition
-    #np.random.seed(0)
-    if args.random:
+
+    if args.seed != None:
+        np.random.seed(args.seed)
+    if args.random or args.n != None:
+        if args.n == None:
+            args.n = int(args.l/2)
         r = lattice_random(args.l,args.n)
     elif args.d != None:
         r = lattice_density_10(args.l,args.d)
         print(r)
     else:
-        r = lattice_even(args.l,args.n)
+        r = lattice_even(args.l)
     
-    if args.p:
-        run_visual_simulation(r,args)
-    else:
+    if args.noplot:
         run_simulation(r,args)
+    else:
+        run_visual_simulation(r,args)
     
