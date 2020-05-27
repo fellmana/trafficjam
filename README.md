@@ -14,6 +14,7 @@ supports in single lane in both kinetic monte carlo
 
 
 ## Options 
+```
 usage: trafficjam.py [-h] [-l L] [-n N] [--noplot] [--release] [--random]
                      [-pr PR] [-d D] [-m MAX] [-sl SPEEDLIMIT]
                      [--type {kmc,ns}] [--units {meters,cells}]
@@ -41,3 +42,4 @@ optional arguments:
   -w W                  Characteristic time w_0 in arrhenius equation,Should
                         correspond to ≈ 80 km/h in sparse case default=6.0
   --seed SEED           give seed to random number generator
+```
